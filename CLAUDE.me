@@ -1,0 +1,1127 @@
+Stellar Guru Contracts
+
+Stellar Guru Contracts
+
+You are building the smart contracts for the Stellar Guru multichain stealth address platform. EVM contracts in Solidity (Hardhat) and Stellar contracts in Soroban/Rust.
+
+The Stellar Guru contract suite provides the on-chain infrastructure for privacy-preserving payments using stealth addresses. Every payment generates a fresh one-time stealth address so on-chain observers cannot link the sender, recipient, or transaction history.
+
+The contracts are designed to be minimal, standards-compliant, and fully interoperable with the Stellar Guru SDK while implementing ERC-5564 announcement events, ERC-6538 stealth meta-address registration, EIP-712 delegated registration, and EIP-7702 gas-sponsored withdrawals on EVM.
+
+
+---
+
+What These Contracts Do
+
+Each supported chain contains four core contracts.
+
+Contract	Purpose
+
+Announcer	Emits stealth address announcement events (no storage, no access control).
+Registry	Maps user addresses to stealth meta-addresses (ERC-6538 on EVM).
+Sender	Performs atomic asset transfer and stealth announcement in a single transaction.
+Names	Maps .guru names to stealth meta-addresses with spending-key ownership verification.
+
+
+EVM Only
+
+Contract	Purpose
+
+Withdrawer	EIP-7702 delegation target enabling gas-sponsored withdrawals from stealth addresses.
+
+
+
+---
+
+Reference Code
+
+The implementation ports functionality from the existing reference implementations.
+
+reference/
+├── horizen/                 # Solidity (Hardhat) reference contracts
+├── stellar/                 # Soroban reference contracts
+└── docs/
+    ├── 07-smart-contracts.md
+    └── 08-testing.md
+
+The reference/ directory is read-only and must never be modified.
+
+
+---
+
+Implementation Plan
+
+Implementation is completed incrementally.
+
+Each completed step must:
+
+compile successfully
+
+pass all tests
+
+be committed using Conventional Commits
+
+be pushed to the remote repository before beginning the next step
+
+
+EVM and Stellar implementations may be developed in parallel by separate contributors.
+
+
+---
+
+Step 1 — EVM Scaffold
+
+Create the following structure.
+
+evm/
+├── package.json
+├── hardhat.config.ts
+├── tsconfig.json
+├── contracts/
+├── test/
+└── scripts/
+    └── deploy.ts
+
+Install dependencies:
+
+hardhat
+
+@nomicfoundation/hardhat-toolbox
+
+@openzeppelin/contracts
+
+
+Verification:
+
+npx hardhat compile
+
+Compilation must succeed before continuing.
+
+
+---
+
+Step 2 — EVM Contracts
+
+Port the Solidity contracts from:
+
+reference/horizen/contracts/contracts/
+
+Implement:
+
+ERC5564Announcer.sol
+
+ERC6538Registry.sol
+
+StellarGuruSender.sol
+
+StellarGuruNames.sol
+
+StellarGuruWithdrawer.sol
+
+
+Create:
+
+contracts/interfaces/
+    IERC5564Announcer.sol
+    IERC6538Registry.sol
+
+contracts/test/
+    ERC20Mock.sol
+
+Each contract must preserve existing NatSpec documentation from the reference implementation.
+
+
+---
+
+Step 3 — EVM Tests
+
+Port the Hardhat test suite from:
+
+reference/horizen/contracts/test/
+
+Required coverage:
+
+Test File	Coverage
+
+ERC5564Announcer.test.ts	Event emission, multiple callers, metadata preservation
+ERC6538Registry.test.ts	Registration, lookup, delegated registration, replay protection, DOMAIN_SEPARATOR, nonce management
+StellarGuruNames.test.ts	Registration, resolution, reverse lookup, duplicate rejection, signature validation, update, release, validation
+StellarGuruSender.test.ts	ETH transfers, ERC20 transfers, gas tips, batch operations, value mismatch, length mismatch
+StellarGuruWithdrawer.test.ts	Empty balance reverts, invalid sponsor fee reverts
+
+
+Verification:
+
+npx hardhat test
+
+Every test must pass before proceeding.
+
+
+---
+
+Step 4 — Deployment
+
+Create:
+
+evm/scripts/deploy.ts
+
+Deployment order:
+
+1. ERC5564Announcer
+
+
+2. ERC6538Registry
+
+
+3. StellarGuruSender (constructor receives announcer address)
+
+
+4. StellarGuruNames
+
+
+5. StellarGuruWithdrawer
+
+
+
+The deployment script should log every deployed contract address.
+
+
+---
+
+Step 5 — Stellar Scaffold
+
+Create the workspace.
+
+stellar/
+├── Cargo.toml
+├── stealth-announcer/
+│   ├── Cargo.toml
+│   └── src/lib.rs
+├── stealth-registry/
+│   ├── Cargo.toml
+│   └── src/lib.rs
+├── stealth-sender/
+│   ├── Cargo.toml
+│   └── src/lib.rs
+└── stellar-guru-names/
+    ├── Cargo.toml
+    └── src/lib.rs
+
+Dependency:
+
+soroban-sdk
+
+
+
+---
+
+Step 6 — Stellar Contracts
+
+Port the Soroban contracts from:
+
+reference/stellar/contracts/
+
+Implement:
+
+stealth-announcer
+
+stealth-registry
+
+stealth-sender
+
+stellar-guru-names
+
+
+The contracts must follow the Stellar Guru protocol specification while preserving the behavior of the reference implementation.
+
+
+---
+
+Step 7 — Stellar Tests
+
+Each contract must include native Rust unit tests using:
+
+#[cfg(test)]
+
+Coverage requirements:
+
+Contract	Tests
+
+stealth-announcer	Event emission, multiple scheme IDs
+stealth-registry	Registration, lookup, invalid length rejection, updates, missing registrations
+stellar-guru-names	Registration, resolution, reverse lookup, duplicate names, release and re-registration, validation
+
+
+Verification:
+
+cargo test --workspace
+
+Every contract must pass its complete test suite before implementation is considered complete.
+
+
+---
+
+EVM Contracts
+
+The EVM implementation consists of five contracts and two public interfaces.
+
+
+---
+
+ERC5564Announcer
+
+A minimal singleton contract implementing ERC-5564 announcement events.
+
+The contract contains:
+
+no storage
+
+no ownership
+
+no access control
+
+
+Public function:
+
+announce(...)
+
+Emits:
+
+event Announcement(
+    uint256 indexed schemeId,
+    address indexed stealthAddress,
+    address indexed caller,
+    bytes ephemeralPubKey,
+    bytes metadata
+);
+
+
+---
+
+ERC6538Registry
+
+Implements the ERC-6538 stealth meta-address registry.
+
+Public functions:
+
+registerKeys(...)
+registerKeysOnBehalf(...)
+stealthMetaAddressOf(...)
+
+Features:
+
+delegated registration
+
+EIP-712 signatures
+
+replay-protected nonces
+
+DOMAIN_SEPARATOR
+
+per-user nonce management
+
+
+
+---
+
+StellarGuruSender
+
+Atomically transfers assets while publishing a stealth announcement.
+
+Uses:
+
+OpenZeppelin ReentrancyGuard
+
+
+Supports:
+
+sendETH(...)
+sendERC20(...)
+batchSendETH(...)
+batchSendERC20(...)
+
+Capabilities:
+
+ETH transfers
+
+ERC20 transfers
+
+optional ETH gas tip
+
+atomic transfer + announcement
+
+batch operations
+
+
+The constructor receives the deployed announcer contract address.
+
+
+---
+
+StellarGuruNames
+
+Privacy-preserving .guru name registry.
+
+Maps human-readable names to stealth meta-addresses.
+
+Public functions:
+
+register(...)
+registerOnBehalf(...)
+update(...)
+release(...)
+resolve(...)
+nameOf(...)
+
+Validation rules:
+
+3–32 characters
+
+lowercase
+
+alphanumeric only
+
+
+Ownership is proven using secp256k1 spending-key signatures.
+
+Signature verification:
+
+ecrecover(
+keccak256(
+"\x19Ethereum Signed Message:\n32" ||
+keccak256(name || metaAddress)
+))
+
+The contract also supports reverse lookup from stealth meta-address to registered name.
+
+
+---
+
+StellarGuruWithdrawer
+
+Implements an EIP-7702 delegation target for sponsored withdrawals.
+
+Public functions:
+
+withdrawETH(...)
+withdrawERC20(...)
+withdrawETHDirect(...)
+withdrawERC20Direct(...)
+
+Supports both:
+
+sponsor-paid withdrawals
+
+self-funded withdrawals
+
+
+Designed to allow stealth addresses to move assets without requiring the stealth address itself to initially hold native gas tokens.
+Stellar Contracts
+
+The Stellar implementation is written using Soroban and provides the same stealth address infrastructure as the EVM implementation while following Soroban best practices.
+
+Each contract is intentionally minimal and performs a single responsibility.
+
+
+---
+
+stealth-announcer
+
+The stealth-announcer contract is a stateless event emitter.
+
+It stores no persistent state and performs no access control.
+
+Public function:
+
+pub fn announce(
+    env,
+    caller,
+    scheme_id,
+    stealth_address,
+    ephemeral_pub_key,
+    metadata
+);
+
+Responsibilities:
+
+Emit stealth announcement events
+
+Preserve announcement metadata
+
+Support multiple announcement schemes
+
+Maintain zero on-chain storage
+
+
+
+---
+
+stealth-registry
+
+The stealth-registry contract maps Stellar addresses to stealth meta-addresses.
+
+Public functions:
+
+pub fn register_keys(
+    env,
+    registrant,
+    scheme_id,
+    stealth_meta_address
+);
+
+pub fn stealth_meta_address_of(
+    env,
+    registrant,
+    scheme_id
+) -> Bytes;
+
+Requirements:
+
+Caller authorization (require_auth())
+
+Stealth meta-address must be exactly 64 bytes
+
+Existing registrations may be updated
+
+Lookup must return the registered stealth meta-address
+
+
+Features:
+
+Authorization-gated registration
+
+Constant-time lookup
+
+Multi-scheme support
+
+
+
+---
+
+stealth-sender
+
+The stealth-sender contract performs atomic transfers together with stealth announcements.
+
+Public functions:
+
+pub fn init(
+    env,
+    admin,
+    announcer
+);
+
+pub fn send(
+    env,
+    caller,
+    token,
+    stealth_address,
+    amount,
+    scheme_id,
+    ephemeral_pub_key,
+    metadata
+);
+
+pub fn batch_send(
+    env,
+    caller,
+    token,
+    stealth_addresses,
+    amounts,
+    scheme_id,
+    ephemeral_pub_keys,
+    metadatas
+);
+
+Features:
+
+Atomic transfer and announcement
+
+Native asset support
+
+Token transfer support
+
+Batch transfers
+
+Announcement forwarding through the deployed announcer contract
+
+
+
+---
+
+stellar-guru-names
+
+The stellar-guru-names contract provides the .guru privacy-preserving name service.
+
+Public functions:
+
+pub fn register(
+    env,
+    caller,
+    name,
+    meta_address
+);
+
+pub fn update(
+    env,
+    caller,
+    name,
+    new_meta_address
+);
+
+pub fn release(
+    env,
+    caller,
+    name
+);
+
+pub fn resolve(
+    env,
+    name
+) -> Bytes;
+
+pub fn name_of(
+    env,
+    meta_address
+) -> String;
+
+Storage:
+
+SHA-256 hashed name keys
+
+
+Validation:
+
+3–32 characters
+
+Lowercase letters
+
+Alphanumeric only
+
+
+Features:
+
+Reverse lookup
+
+Ownership verification
+
+Privacy-preserving storage
+
+Efficient name resolution
+
+
+
+---
+
+Repository Structure
+
+The repository is organized into separate EVM and Stellar workspaces while keeping reference implementations isolated.
+
+contracts/
+├── evm/
+│   ├── package.json
+│   ├── hardhat.config.ts
+│   ├── tsconfig.json
+│   ├── contracts/
+│   │   ├── ERC5564Announcer.sol
+│   │   ├── ERC6538Registry.sol
+│   │   ├── StellarGuruSender.sol
+│   │   ├── StellarGuruNames.sol
+│   │   ├── StellarGuruWithdrawer.sol
+│   │   ├── interfaces/
+│   │   │   ├── IERC5564Announcer.sol
+│   │   │   └── IERC6538Registry.sol
+│   │   └── test/
+│   │       └── ERC20Mock.sol
+│   ├── test/
+│   │   ├── ERC5564Announcer.test.ts
+│   │   ├── ERC6538Registry.test.ts
+│   │   ├── StellarGuruSender.test.ts
+│   │   ├── StellarGuruNames.test.ts
+│   │   └── StellarGuruWithdrawer.test.ts
+│   └── scripts/
+│       └── deploy.ts
+│
+├── stellar/
+│   ├── Cargo.toml
+│   ├── stealth-announcer/
+│   ├── stealth-registry/
+│   ├── stealth-sender/
+│   └── stellar-guru-names/
+│
+└── reference/
+    ├── horizen/
+    ├── stellar/
+    └── docs/
+
+The reference/ directory is read-only and exists solely as the implementation source.
+
+
+---
+
+Code Quality Tooling
+
+Prettier
+
+A shared Prettier configuration is used for all Solidity and TypeScript code.
+
+Create .prettierrc in the repository root.
+
+{
+  "semi": true,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 100,
+  "tabWidth": 2,
+  "overrides": [
+    {
+      "files": "*.sol",
+      "options": {
+        "printWidth": 120
+      }
+    }
+  ]
+}
+
+Create .prettierignore.
+
+node_modules
+artifacts
+cache
+typechain-types
+reference
+stellar
+
+Add to evm/package.json:
+
+{
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  }
+}
+
+
+---
+
+Husky
+
+Install:
+
+husky
+
+prettier
+
+prettier-plugin-solidity
+
+
+Create a pre-commit hook.
+
+cd evm
+
+npx prettier --check .
+
+npx hardhat compile
+
+npx hardhat test
+
+Every commit must pass formatting, compilation, and tests before being accepted.
+
+
+---
+
+Commitlint
+
+Install:
+
+@commitlint/cli
+
+@commitlint/config-conventional
+
+
+Create:
+
+module.exports = {
+  extends: ['@commitlint/config-conventional'],
+};
+
+Create a commit-msg hook.
+
+npx --no -- commitlint --edit $1
+
+All commits must follow Conventional Commits.
+
+Examples:
+
+feat: add StellarGuruNames contract
+
+fix: validate stealth meta-address length
+
+test: add registry replay protection tests
+
+docs: update deployment guide
+
+refactor: simplify sender contract
+
+chore: configure prettier
+
+
+---
+
+— Continuous Integration (CI)
+
+Create:
+
+.github/workflows/ci.yml
+
+The workflow validates both EVM and Stellar implementations on every push and pull request.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  evm:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: evm
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - run: npx prettier --check .
+
+      - run: npx hardhat compile
+
+      - run: npx hardhat test
+
+  stellar:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: stellar
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: stellar/setup-soroban@v1
+
+      - run: cargo fmt --check --manifest-path Cargo.toml
+
+      - run: cargo test --workspace
+
+The CI pipeline must ensure:
+
+Successful EVM dependency installation
+
+Successful Solidity compilation
+
+Successful Hardhat test execution
+
+Successful Soroban formatting checks
+
+Successful Soroban workspace tests
+
+
+A pull request should not be merged until every CI job completes successfully.
+README
+
+Create a README.md in the repository root that provides a concise technical overview of the Stellar Guru smart contracts.
+
+The README should include the following sections.
+
+
+---
+
+Stellar Guru Contracts
+
+Stealth address smart contracts for the Stellar Guru multichain privacy platform. EVM contracts are implemented in Solidity (Hardhat) and Stellar contracts are implemented in Soroban/Rust.
+
+The contract suite provides the core on-chain infrastructure for privacy-preserving payments using stealth addresses. Every payment generates a fresh one-time stealth address so on-chain observers cannot link the sender, recipient, or transaction history.
+
+
+---
+
+EVM Contracts
+
+Contract	Description
+
+ERC5564Announcer	Stateless announcement contract implementing ERC-5564.
+ERC6538Registry	ERC-6538 stealth meta-address registry with delegated registration support.
+StellarGuruSender	Atomic asset transfer and stealth announcement contract.
+StellarGuruNames	Privacy-preserving .guru name registry secured by spending-key ownership.
+StellarGuruWithdrawer	EIP-7702 delegation target for gas-sponsored withdrawals.
+
+
+
+---
+
+Stellar Contracts
+
+Contract	Description
+
+stealth-announcer	Stateless stealth announcement emitter.
+stealth-registry	Stealth meta-address registry for Soroban.
+stealth-sender	Atomic transfer and announcement contract.
+stellar-guru-names	Privacy-preserving .guru name registry.
+
+
+
+---
+
+Building
+
+EVM
+
+cd evm
+
+npm install
+
+npx hardhat compile
+
+npx hardhat test
+
+Stellar
+
+cd stellar
+
+cargo test --workspace
+
+
+---
+
+Deployment
+
+Deploy the EVM contracts in the following order:
+
+1. ERC5564Announcer
+
+
+2. ERC6538Registry
+
+
+3. StellarGuruSender
+
+
+4. StellarGuruNames
+
+
+5. StellarGuruWithdrawer
+
+
+
+Deploy each Soroban contract after building the workspace.
+
+
+---
+
+Deployed Addresses
+
+EVM
+
+Contract	Address
+
+ERC5564Announcer	
+ERC6538Registry	
+StellarGuruSender	
+StellarGuruNames	
+StellarGuruWithdrawer	
+
+
+Stellar
+
+Contract	Contract ID
+
+stealth-announcer	
+stealth-registry	
+stealth-sender	
+stellar-guru-names	
+
+
+
+---
+
+Rules
+
+The following repository rules must always be followed.
+
+Reference Directory
+
+Never commit, modify, or delete any file inside the reference/ directory.
+
+The reference/ directory is read-only and serves only as the implementation source.
+
+
+
+---
+
+Commits
+
+Every completed implementation step must:
+
+Compile successfully
+
+Pass all required tests
+
+Be committed immediately
+
+Be pushed to the remote repository
+
+
+Commit messages must follow the Conventional Commits specification.
+
+Examples:
+
+feat: implement ERC6538 registry
+
+fix: validate stealth meta-address length
+
+test: add sender batch transfer tests
+
+docs: update deployment guide
+
+refactor: simplify registry storage
+
+chore: configure prettier
+
+Do not add Co-Authored-By lines to commit messages.
+
+
+---
+
+Code Style
+
+Preserve all existing NatSpec and documentation when porting reference contracts.
+
+Do not add numbered step comments in source code.
+
+Follow the configured Prettier formatting rules.
+
+Keep contracts modular and focused on a single responsibility.
+
+Maintain compatibility with the Stellar Guru SDK.
+
+
+
+---
+
+Testing
+
+Every contract must be fully tested before implementation is considered complete.
+
+EVM
+
+Use:
+
+Hardhat
+
+Chai
+
+
+Required verification:
+
+npx hardhat test
+
+Stellar
+
+Use native Soroban test utilities.
+
+Each contract must contain:
+
+#[cfg(test)]
+
+Required verification:
+
+cargo test --workspace
+
+
+---
+
+Parallel Development
+
+EVM and Stellar implementations may be developed independently by separate contributors.
+
+Both implementations must satisfy all specifications before release.
+
+
+---
+
+Features
+
+Privacy-preserving stealth address infrastructure
+
+One-time stealth addresses
+
+ERC-5564 announcement support
+
+ERC-6538 stealth meta-address registry
+
+EIP-712 delegated registration
+
+EIP-7702 sponsored withdrawals
+
+Atomic asset transfer and announcement
+
+Batch ETH transfers
+
+Batch ERC-20 transfers
+
+Replay protection
+
+Nonce management
+
+Spending-key ownership verification
+
+Privacy-preserving .guru name service
+
+Reverse name lookup
+
+SHA-256 hashed name storage (Soroban)
+
+Solidity (Hardhat) implementation
+
+Soroban (Rust) implementation
+
+TypeScript deployment scripts
+
+Comprehensive unit test coverage
+
+GitHub Actions continuous integration
+
+Husky pre-commit validation
+
+Commitlint enforcement
+
+Prettier formatting
+
+Conventional Commit workflow
+
+
+
+---
+
+License
+
+MIT License
+
+Copyright (c) Stellar Guru
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
