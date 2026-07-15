@@ -1,5 +1,3 @@
-# Stella-Guru
-
 # Stellar Guru Contracts
 
 Stealth address smart contracts for the **Stellar Guru** multichain privacy platform. EVM contracts in Solidity (Hardhat), Stellar contracts in Soroban/Rust, Solana programs in Anchor/Rust, and CKB scripts in Rust (RISC-V).
