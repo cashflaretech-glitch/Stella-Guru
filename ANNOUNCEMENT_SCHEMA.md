@@ -1,5 +1,3 @@
----
-
 Cross-Chain Announcement Schema Conformance Audit
 
 This document audits announcement schema compatibility across Stellar Guru supported chains and defines the canonical SDK normalization model used by off-chain indexers and clients.
